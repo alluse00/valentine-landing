@@ -13,14 +13,39 @@
   <main class="hero">
     <div class="glow"></div>
     <section class="card">
-      <p class="eyebrow">8 de febrero</p>
-      <h1>San Valentin</h1>
-      <p class="tagline">Un lienzo listo para tu mensaje especial.</p>
+      <h1>Quieres ser mi San Valentin?</h1>
+      <p class="tagline">Prometo que el boton correcto es facil.</p>
       <div class="cta-row">
-        <a class="cta primary" href="#">Abrir propuesta</a>
-        <a class="cta ghost" href="#">Compartir enlace</a>
+        <a class="cta primary" href="#" data-yes>Si :)</a>
+        <button class="cta ghost evasive" type="button" data-no>No :(</button>
       </div>
     </section>
   </main>
+  <script>
+    const noBtn = document.querySelector('[data-no]');
+    const hero = document.querySelector('.hero');
+
+    const relocate = (btn) => {
+      const offsetX = Math.random() * 240 - 120;
+      const offsetY = Math.random() * 140 - 70;
+      btn.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    };
+
+    hero.addEventListener('mousemove', (event) => {
+      if (!noBtn) return;
+      const rect = noBtn.getBoundingClientRect();
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      const distance = Math.hypot(dx, dy);
+      if (distance < 140) {
+        relocate(noBtn);
+      }
+    });
+
+    hero.addEventListener('mouseleave', () => {
+      if (!noBtn) return;
+      noBtn.style.transform = 'translate(0, 0)';
+    });
+  </script>
 </body>
 </html>
