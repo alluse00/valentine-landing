@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>San Valentin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=Space+Grotesk:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+  <main class="hero">
+    <div class="glow"></div>
+    <canvas id="scene" class="scene" aria-hidden="true"></canvas>
+    <section class="card">
+      <h1>Quieres ser mi San Valentin?</h1>
+      <p class="tagline">Prometo que el boton correcto es facil.</p>
+      <div class="cta-row">
+        <a class="cta primary" href="#" data-yes>Si :)</a>
+        <button class="cta ghost evasive" type="button" data-no>No :(</button>
+      </div>
+    </section>
+  </main>
+  <script>
+    const noBtn = document.querySelector('[data-no]');
+    const yesBtn = document.querySelector('[data-yes]');
+    const hero = document.querySelector('.hero');
+    const card = document.querySelector('.card');
+    const scene = document.getElementById('scene');
+    const ctx = scene.getContext('2d');
+
+    const relocateWithinCard = (btn) => {
+      if (!card) return;
+      const cardRect = card.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const yesRect = yesBtn ? yesBtn.getBoundingClientRect() : null;
+      const cardCenterX = cardRect.left + cardRect.width / 2;
+      const cardCenterY = cardRect.top + cardRect.height / 2;
+      const margin = 16;
+      const maxX = Math.max(0, (cardRect.width - btnRect.width) / 2 - margin);
+      const maxY = Math.max(0, (cardRect.height - btnRect.height) / 2 - margin);
+      const minGap = yesRect ? (btnRect.width + yesRect.width) / 2 + 20 : 0;
+
+      for (let attempt = 0; attempt < 24; attempt += 1) {
+        const offsetX = (Math.random() * 2 - 1) * maxX;
+        const offsetY = (Math.random() * 2 - 1) * maxY;
+        const proposedX = cardCenterX + offsetX;
+        const proposedY = cardCenterY + offsetY;
+        if (yesRect) {
+          const yesCenterX = yesRect.left + yesRect.width / 2;
+          const yesCenterY = yesRect.top + yesRect.height / 2;
+          const distance = Math.hypot(proposedX - yesCenterX, proposedY - yesCenterY);
+          if (distance < minGap) continue;
+        }
+        btn.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+        return;
+      }
+    };
+
+    if (noBtn) {
+      noBtn.addEventListener('mouseenter', () => relocateWithinCard(noBtn));
+    }
+
+    // Scene animation: fade out card and draw ground line, falling seed, trunk, and branches.
+    let animState = 'idle';
+    let startTime = 0;
+    let lineY = 0;
+    let cardHidden = false;
+    let sequenceStarted = false;
+    let driftStart = 0;
+    let typingStart = 0;
+    const driftDistance = 140;
+    const driftDuration = 3200;
+    const typingDelay = 80; // ms per letter (faster)
+    const typingText = "Baby, you light up my world like nobody else. The way that you flip your hair gets me overwhelmed. But when you smile at the ground, it ain't hard to tell. You don't know, oh, oh. You don't know you're beautiful.";
+    const titleText = "TQMmMmMmucho bebé";
+    let titleStart = 0;
+    let titleStarted = false;
+
+    const resizeScene = () => {
+      if (!hero || !scene) return;
+      const rect = hero.getBoundingClientRect();
+      scene.width = rect.width;
+      scene.height = rect.height;
+      lineY = rect.height * 0.78;
+      if (animState === 'idle') {
+        ctx.clearRect(0, 0, scene.width, scene.height);
+      }
+    };
+
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    const drawGround = (progress, offsetX = 0) => {
+      const cx = scene.width / 2 + offsetX;
+      const half = (scene.width / 2) * progress;
+      ctx.strokeStyle = '#d9c9a3';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - half, lineY);
+      ctx.lineTo(cx + half, lineY);
+      ctx.stroke();
+    };
+
+    const drawDot = (x, y) => {
+      ctx.fillStyle = '#6b4423';
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const drawCurvedBranch = (x, y, length, angle, width, curve, progress) => {
+      const len = length * progress;
+      const ctrlX = x + Math.cos(angle) * len * 0.55 - Math.sin(angle) * curve;
+      const ctrlY = y + Math.sin(angle) * len * 0.55 + Math.cos(angle) * curve;
+      const endX = x + Math.cos(angle) * len;
+      const endY = y + Math.sin(angle) * len;
+      ctx.strokeStyle = '#6b4423';
+      ctx.lineWidth = width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(ctrlX, ctrlY, endX, endY);
+      ctx.stroke();
+      return { endX, endY };
+    };
+
+    let branchPlan = [];
+    let leafPlan = [];
+    let rngSeed = 87321;
+    let leafSeed = 57991;
+    const TRUNK_HEIGHT = 180;
+
+    const seeded = () => {
+      // Park-Miller LCG
+      rngSeed = (rngSeed * 16807) % 2147483647;
+      return (rngSeed - 1) / 2147483646;
+    };
+
+    const seededLeaf = () => {
+      leafSeed = (leafSeed * 16807) % 2147483647;
+      return (leafSeed - 1) / 2147483646;
+    };
+
+    const buildBranchPlan = () => {
+      rngSeed = 87321; // reset for determinism
+      const primaryAngles = [-2.8, -2.4, -2.05, -1.75, -1.5, -1.2, -0.95, -0.7, -0.45, -0.25];
+      branchPlan = primaryAngles.map((angle) => {
+        const jitter = (seeded() - 0.5) * 0.08; // keep upward bias
+        const finalAngle = angle + jitter;
+        const length = 70 + seeded() * 16; // slightly shorter branches, keep variation
+        const width = 5 + seeded() * 2;
+        const curve = 10 + seeded() * 12;
+        const subSpread = 0.22 + seeded() * 0.18;
+        const subLenFactor = 0.40 + seeded() * 0.20;
+        const originFactor = 0.55 + seeded() * 0.4; // upper half of trunk
+        const twigCount = 1 + Math.floor(seeded() * 2); // 1-2 twigs
+        const twigs = Array.from({ length: twigCount }).map(() => {
+          const frac = 0.35 + seeded() * 0.45; // along the branch
+          const offset = (seeded() - 0.5) * 0.5; // angle offset
+          const lenFactor = 0.22 + seeded() * 0.18;
+          const wFactor = 0.4 + seeded() * 0.25;
+          const cFactor = 0.4 + seeded() * 0.25;
+          return { frac, offset, lenFactor, wFactor, cFactor };
+        });
+        return {
+          angle: finalAngle,
+          length,
+          width,
+          curve,
+          originFactor,
+          twigs,
+          subs: [
+            {
+              angle: finalAngle - subSpread,
+              lengthFactor: subLenFactor,
+              width: width * (0.6 + seeded() * 0.2),
+              curve: curve * (0.6 + seeded() * 0.25),
+            },
+            {
+              angle: finalAngle + subSpread,
+              lengthFactor: subLenFactor,
+              width: width * (0.6 + seeded() * 0.2),
+              curve: curve * (0.6 + seeded() * 0.25),
+            },
+          ],
+        };
+      });
+    };
+
+    const buildLeafPlan = () => {
+      leafSeed = 57991;
+      const cx = scene.width / 2;
+      const anchorY = lineY - TRUNK_HEIGHT - 16;
+      const scale = 12;
+      const total = 520;
+      const palette = ['#ff95a5', '#ff8095', '#ff6f8c', '#ff577c', '#ff4d6d', '#f25a8a'];
+      leafPlan = [];
+      let attempts = 0;
+      const maxAttempts = total * 12;
+      while (leafPlan.length < total && attempts < maxAttempts) {
+        attempts += 1;
+        const t = seededLeaf() * Math.PI * 2;
+        const hx = 16 * Math.sin(t) ** 3;
+        const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+        const fill = Math.pow(seededLeaf(), 0.62); // push points inward for a filled heart
+        const jitterX = (seededLeaf() - 0.5) * 8;
+        const jitterY = (seededLeaf() - 0.5) * 8;
+        const x = cx + hx * scale * fill + jitterX;
+        const y = anchorY + hy * (scale * 0.7) * fill + jitterY;
+        const size = 14 + seededLeaf() * 7.5;
+        const color = palette[leafPlan.length % palette.length];
+
+        const minDistOk = leafPlan.every((leaf) => {
+          const dx = leaf.x - x;
+          const dy = leaf.y - y;
+          const d2 = dx * dx + dy * dy;
+          const minD = (leaf.size + size) * 0.32; // allow light overlap, avoid full stacking
+          return d2 >= minD * minD;
+        });
+        if (!minDistOk) continue;
+
+        leafPlan.push({ x, y, size, color });
+      }
+    };
+
+    const drawTrunk = (height) => {
+      const cx = scene.width / 2;
+      const baseW = 16;
+      const topW = 8;
+      const bend = 10;
+      const ctrlX = cx + bend;
+      const ctrlY = lineY - height * 0.6;
+      // Outer stroke for volume
+      ctx.strokeStyle = '#5a361c';
+      ctx.lineWidth = baseW;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, lineY);
+      ctx.quadraticCurveTo(ctrlX, ctrlY, cx, lineY - height);
+      ctx.stroke();
+      // Inner stroke for highlight and taper
+      ctx.strokeStyle = '#6b4423';
+      ctx.lineWidth = topW;
+      ctx.beginPath();
+      ctx.moveTo(cx, lineY);
+      ctx.quadraticCurveTo(ctrlX + 4, ctrlY, cx, lineY - height);
+      ctx.stroke();
+      return { topX: cx, topY: lineY - height };
+    };
+
+    const drawHeart = (x, y, size, color, alpha) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size / 16, size / 16);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(0, 6);
+      ctx.bezierCurveTo(0, 0, -8, 0, -8, 6);
+      ctx.bezierCurveTo(-8, 12, 0, 14, 0, 18);
+      ctx.bezierCurveTo(0, 14, 8, 12, 8, 6);
+      ctx.bezierCurveTo(8, 0, 0, 0, 0, 6);
+      ctx.fill();
+      ctx.restore();
+    };
+
+    const drawLeaves = (progress) => {
+      const base = Math.min(1, progress);
+      leafPlan.forEach((leaf, idx) => {
+        const delay = (idx / leafPlan.length) * 0.6;
+        const p = Math.min(1, Math.max(0, (base - delay) / 0.4));
+        if (p <= 0) return;
+        drawHeart(leaf.x, leaf.y, leaf.size * p, leaf.color, 0.80);
+      });
+    };
+
+    const drawBranches = (originX, originY, progress) => {
+      branchPlan.forEach((branch) => {
+        const { angle, length, width, curve, subs, originFactor, twigs } = branch;
+        const spawnY = lineY - TRUNK_HEIGHT * originFactor;
+        const bendShift = 6 * (1 - originFactor); // slight shift to follow trunk bend
+        const spawnX = originX + bendShift;
+        const main = drawCurvedBranch(spawnX, spawnY, length, angle, width, curve, progress);
+
+        subs.forEach((sub) => {
+          drawCurvedBranch(
+            main.endX,
+            main.endY,
+            length * sub.lengthFactor,
+            sub.angle,
+            sub.width,
+            sub.curve,
+            Math.max(0, progress - 0.12)
+          );
+        });
+
+        twigs.forEach((twig) => {
+          const { frac, offset, lenFactor, wFactor, cFactor } = twig;
+          if (progress < frac) return;
+          const localProgress = Math.max(0, (progress - frac) / (1 - frac));
+          const baseX = spawnX + Math.cos(angle) * length * frac;
+          const baseY = spawnY + Math.sin(angle) * length * frac;
+          drawCurvedBranch(
+            baseX,
+            baseY,
+            length * lenFactor,
+            angle + offset,
+            width * wFactor,
+            curve * cFactor,
+            localProgress
+          );
+        });
+      });
+    };
+
+    const drawTyping = (ts) => {
+      const elapsed = Math.max(0, ts - typingStart);
+      const count = Math.min(typingText.length, Math.floor(elapsed / typingDelay));
+      // If nothing to draw yet, exit
+      if (count <= 0) return;
+
+      // Draw paragraph (existing behavior)
+      const snippet = typingText.slice(0, count);
+      ctx.save();
+      ctx.fillStyle = '#f6f7fb';
+      ctx.font = '20px "Space Grotesk", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const maxWidth = scene.width * 0.4;
+      const x = scene.width * 0.08;
+      const y = lineY - 160; // moved up a bit
+      const words = snippet.split(' ');
+      let line = '';
+      let drawY = y;
+      words.forEach((word) => {
+        const testLine = line ? `${line} ${word}` : word;
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && line) {
+          ctx.fillText(line, x, drawY);
+          line = word;
+          drawY += 28;
+        } else {
+          line = testLine;
+        }
+      });
+      if (line) {
+        ctx.fillText(line, x, drawY);
+      }
+      ctx.restore();
+
+      // When paragraph finishes, schedule title typing once
+      const paragraphDone = count >= typingText.length;
+      if (paragraphDone && !titleStarted) {
+        titleStarted = true;
+        titleStart = ts + 220; // slight delay before title starts
+      }
+
+      // Draw title above paragraph once its typing begins
+      if (titleStarted) {
+        const titleElapsed = Math.max(0, ts - titleStart);
+        const titleCount = Math.min(titleText.length, Math.floor(titleElapsed / typingDelay));
+        if (titleCount > 0) {
+          const titleSnippet = titleText.slice(0, titleCount);
+          ctx.save();
+          ctx.fillStyle = '#fff9f9';
+          ctx.font = '36px "Playfair Display", serif';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'bottom';
+          const titleX = x;
+          const titleY = y - 12; // place above paragraph
+          ctx.fillText(titleSnippet, titleX, titleY);
+          ctx.restore();
+        }
+      }
+    };
+
+    const tick = (ts) => {
+      ctx.clearRect(0, 0, scene.width, scene.height);
+      if (animState === 'idle') return;
+
+      // Compute drift offset once in done phase
+      let offsetX = 0;
+      if (animState === 'done' || animState === 'branches') {
+        const driftElapsed = driftStart ? ts - driftStart : 0;
+        const driftP = Math.min(1, Math.max(0, driftElapsed / driftDuration));
+        offsetX = easeOutCubic(driftP) * driftDistance;
+      }
+
+      if (animState === 'line') {
+        const t = Math.min(1, (ts - startTime) / 800);
+        const p = easeOutCubic(t);
+        drawGround(p);
+        if (t >= 1) {
+          animState = 'drop';
+          startTime = ts;
+        }
+      } else if (animState === 'drop') {
+        drawGround(1);
+        const t = Math.min(1, (ts - startTime) / 700);
+        const p = easeOutCubic(t);
+        const startY = 32;
+        const y = startY + (lineY - startY - 4) * p;
+        drawDot(scene.width / 2, y);
+        if (t >= 1) {
+          animState = 'trunk';
+          startTime = ts;
+        }
+      } else if (animState === 'trunk') {
+        drawGround(1);
+        const t = Math.min(1, (ts - startTime) / 900);
+        const p = easeOutCubic(t);
+        const trunkHeight = 180 * p;
+        const { topX, topY } = drawTrunk(trunkHeight);
+        if (t >= 1) {
+          animState = 'branches';
+          startTime = ts;
+        }
+      }
+
+      ctx.save();
+      ctx.translate(offsetX, 0);
+
+      if (animState === 'branches') {
+        drawGround(1, -offsetX);
+        const { topX, topY } = drawTrunk(TRUNK_HEIGHT);
+        const t = Math.min(1, (ts - startTime) / 900);
+        const p = easeOutCubic(t);
+        drawBranches(topX, topY + 4, p);
+        drawLeaves(p);
+        if (t >= 1) {
+          animState = 'done';
+          driftStart = ts;
+          typingStart = ts + 600;
+        }
+      } else if (animState === 'done') {
+        drawGround(1, -offsetX);
+        const { topX, topY } = drawTrunk(TRUNK_HEIGHT);
+        drawBranches(topX, topY + 4, 1);
+        drawLeaves(1);
+      }
+
+      ctx.restore();
+
+      if (animState === 'done') {
+        drawTyping(ts);
+      }
+
+      requestAnimationFrame(tick);
+    };
+
+    const startSequence = (event) => {
+      event.preventDefault();
+      if (sequenceStarted) return;
+      sequenceStarted = true;
+      buildBranchPlan();
+      buildLeafPlan();
+      if (card) {
+        card.classList.add('fade-out');
+        cardHidden = true;
+      }
+      setTimeout(() => {
+        resizeScene();
+        scene.classList.add('visible');
+        animState = 'line';
+        startTime = performance.now();
+        requestAnimationFrame(tick);
+      }, 240);
+    };
+
+    if (yesBtn) {
+      yesBtn.addEventListener('click', startSequence);
+    }
+
+    window.addEventListener('resize', resizeScene);
+    resizeScene();
+  </script>
+</body>
+</html>
