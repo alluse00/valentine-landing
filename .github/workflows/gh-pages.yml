@@ -15,6 +15,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Show repository contents (debug)
+        run: |
+          echo "Working directory: $(pwd)"
+          echo "--- Top-level ---"
+          ls -la
+          echo "--- .github ---"
+          ls -la .github || true
+          echo "--- root files matching index.html ---"
+          ls -la index.html || true
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
